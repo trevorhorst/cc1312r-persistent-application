@@ -14,4 +14,5 @@
 	<isTargetConfigurationManual value="false"/>
 	<origin value="/home/thorst/ti/simplelink_cc13xx_cc26xx_sdk_8_31_00_11/examples/rtos/CC1312R1_LAUNCHXL/prop_rf/rfOADClientIntFlashPApp/tirtos7/gcc/rfOADClientIntFlashPApp_CC1312R1_LAUNCHXL_tirtos7_gcc.projectspec"/>
 	<filesToOpen value=""/>
+	<isTargetManual value="false"/>
 </projectOptions>
