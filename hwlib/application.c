@@ -30,7 +30,6 @@
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <rfClient.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -53,7 +52,6 @@
 #include <ti/display/Display.h>
 #include <ti/drivers/GPIO.h>
 #include <ti/drivers/rf/RF.h>
-#include <ti/drivers/GPIO.h>
 #include <ti/display/DisplayExt.h>
 
 /* Board Header files */
@@ -64,6 +62,10 @@
 #include DeviceFamily_constructPath(driverlib/rf_prop_mailbox.h)
 #include DeviceFamily_constructPath(driverlib/sys_ctrl.h)
 #include DeviceFamily_constructPath(driverlib/cpu.h)
+
+#include "hwlib/application.h"
+
+#include "commonlib/command/command.h"
 
 /* Application Header files */
 #include "oad/native_oad/oad_client.h"
@@ -77,7 +79,7 @@
 #include "clientStorage.h"
 #endif
 
-__attribute__((section(".aux_data"))) char aux_ram_data[4096];
+// __attribute__((section(".aux_data"))) char aux_ram_data;
 
 /* Display driver handles */
 static Display_Handle hDisplaySerial;
@@ -95,65 +97,40 @@ uint8_t * ptrAppBuffer;
 Event_Struct clientEvent;  /* not static so you can see in ROV */
 static Event_Handle clientEventHandle;
 
+int32_t cmd_uart(vector *control, cJSON *params, cJSON **result)
+{
+    if(control && (control->size > 0)) {
+        UART2_Handle handle = (UART2_Handle)vector_get(control, 0);
+        char *test = "Hello World\n";
+        size_t bytes_written = 0;
+        UART2_write(handle, test, strlen(test), &bytes_written);
+    }
+    return 0;
+}
+
 /*
  *  ======== main ========
  */
 void *mainThread(void *arg0)
 {
-    Display_init();
+    (void)arg0;
+    UART2_Handle uartHandle = NULL;
+    command uartCommand;
+    initialize_uart(&uartHandle);
 
-    /* Setup buttons 1, buttons 2 and green LED */
-    GPIO_setInitialization();
+    command_init(&uartCommand, cmd_uart, "UART Command Help");
+    command_add_control(&uartCommand, (void*)uartHandle);
+    uartCommand.callback(&(uartCommand.control), NULL, NULL);
+    return 0;
+}
 
-    /* Setup display settings */
-    Display_setInitialization();
-
-    /* Initialize the radio */
-    ptrAppBuffer = Radio_Init(rfClient_postNewOADMsg);
-
-    /* OAD Init */
-    OAD_Init();
-
-    /* Enter receive mode for a single packet*/
-    Radio_rxPacket();
-
-#ifdef OAD_P_APP
-
-    clientStorage_init();
-
-    /* Check NVS for connection data. If found load that connection */
-    if (clientStorage_verifyStorage())
-    {
-        OADProtocol_sendOadResetRsp((void*)0xFF);
-    }
-
-#endif /* OAD_P_APP */
-
-    while (1)
-    {
-        /* Wait for event */
-        uint32_t events = Event_pend(clientEventHandle, 0, CLIENT_EVENT_ALL, BIOS_WAIT_FOREVER);
-
-        /* Printing general OAD events */
-        if (events & CLIENT_EVENT_STATUS_UPDATE)
-        {
-            /* Update display */
-            rfClient_printUpdate();
-        }
-
-        /* OAD message is unknown so call parse to decode*/
-        if (events & CLIENT_EVENT_NEW_OAD_MSG)
-        {
-            OADProtocol_ParseIncoming((void*)0xFF, ptrAppBuffer);
-        }
-
-        /* Handle OAD MSG Req */
-        if (events & CLIENT_EVENT_OAD_REQ)
-        {
-            OADClient_processEvent(&events);
-        }
-    }
-
+void initialize_uart(UART2_Handle *cntrl)
+{
+    // Configure the UART handler
+    UART2_Params uart_params;
+    UART2_Params_init(&uart_params);
+    uart_params.baudRate = 115200;
+    *cntrl = UART2_open(CONFIG_UART2_0, &uart_params);
 }
 
 #if defined(OAD_U_APP) && !defined(MCUBOOT)

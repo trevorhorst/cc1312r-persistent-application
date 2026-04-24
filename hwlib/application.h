@@ -17,6 +17,10 @@
 #include <stdint.h>
 #include <oad/native_oad/oad_storage.h>
 
+#include <ti/drivers/UART2.h>
+
+void initialize_uart(UART2_Handle *cntrl);
+
 /*******************************************************************************
  * DEFINES
  ******************************************************************************/

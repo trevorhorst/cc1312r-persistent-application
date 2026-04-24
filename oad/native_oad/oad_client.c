@@ -70,7 +70,7 @@
 #include <oad/native_oad/oad_image_header_app.h>
 
 /* Application files */
-#include <rfClient.h>
+#include "hwlib/application.h"
 #include "radio/radio.h"
 
 /******************************************************************************
