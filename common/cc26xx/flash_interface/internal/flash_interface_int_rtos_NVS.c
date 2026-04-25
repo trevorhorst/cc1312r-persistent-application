@@ -100,7 +100,7 @@ bool flash_open(void)
 {
     if (!isOpen)
     {
-        nvsHandle = NVS_open(CONFIG_NVSINTERNAL1, &nvsParams);
+        nvsHandle = NVS_open(CONFIG_NVS_ENV, &nvsParams);
         if (nvsHandle != NULL)
         {
             isOpen = true;

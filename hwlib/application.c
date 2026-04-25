@@ -46,7 +46,7 @@
 #include <ti/sysbios/knl/Event.h>
 #include <ti/sysbios/knl/Clock.h>
 
-/* TI-RTOS Header files */ 
+/* TI-RTOS Header files */
 #include <ti/drivers/Power.h>
 #include <ti/drivers/power/PowerCC26XX.h>
 #include <ti/display/Display.h>
@@ -66,6 +66,7 @@
 #include "hwlib/application.h"
 
 #include "commonlib/command/command.h"
+#include "commonlib/logger/logger.h"
 
 /* Application Header files */
 #include "oad/native_oad/oad_client.h"
@@ -116,21 +117,56 @@ void *mainThread(void *arg0)
     (void)arg0;
     UART2_Handle uartHandle = NULL;
     command uartCommand;
-    initialize_uart(&uartHandle);
+    initialize_uart(&uartHandle, &uartCommand);
+    log_init(uartHandle);
+    log_set_level(LOG_DEBUG);
 
-    command_init(&uartCommand, cmd_uart, "UART Command Help");
-    command_add_control(&uartCommand, (void*)uartHandle);
-    uartCommand.callback(&(uartCommand.control), NULL, NULL);
+    nvs_control nvs_cntrl[CONFIG_TI_DRIVERS_NVS_COUNT] = {
+        {CONFIG_NVS_UAPP, NULL, {0}},
+        { CONFIG_NVS_ENV, NULL, {0}},
+        {CONFIG_NVS_PAPP, NULL, {0}}
+    };
+
+    NVS_init();
+
+    for(uint32_t i = 0; i < CONFIG_TI_DRIVERS_NVS_COUNT; i++) {
+        // Initialize parameters
+        NVS_Params_init(&(nvs_cntrl[i].params));
+        // Initialize handle
+        nvs_cntrl[i].handle = NVS_open(nvs_cntrl[i].fd, &(nvs_cntrl[i].params));
+        if(nvs_cntrl[i].handle == NULL) {
+            LOG_WARN("Failed to open NVS handle %d\r\n", nvs_cntrl[i].fd);
+        } else {
+            NVS_Attrs attributes;
+            NVS_getAttrs(nvs_cntrl[i].handle, &attributes);
+            LOG_INFO("NVS Region %d\r\n", nvs_cntrl[i].fd);
+            LOG_INFO("   Base Address: 0x%x\r\n", attributes.regionBase);
+            LOG_INFO("    Sector Size: 0x%x\r\n", attributes.sectorSize);
+            LOG_INFO("    Region Size: 0x%x\r\n", attributes.regionSize);
+        }
+    }
+
+//    command_init(&uartCommand, cmd_uart, "UART Command Help");
+//    command_add_control(&uartCommand, (void*)uartHandle);
+//    uartCommand.callback(&(uartCommand.control), NULL, NULL);
     return 0;
 }
 
-void initialize_uart(UART2_Handle *cntrl)
+void initialize_uart(UART2_Handle *cntrl, command *cmd)
 {
     // Configure the UART handler
     UART2_Params uart_params;
     UART2_Params_init(&uart_params);
     uart_params.baudRate = 115200;
     *cntrl = UART2_open(CONFIG_UART2_0, &uart_params);
+
+    command_init(cmd, cmd_uart, "UART Command Help");
+    command_add_control(cmd, (void*)(*cntrl));
+    cmd->callback(&(cmd->control), NULL, NULL);
+}
+
+void initialize_nvs(nvs_control *cntrl, uint32_t num)
+{
 }
 
 #if defined(OAD_U_APP) && !defined(MCUBOOT)

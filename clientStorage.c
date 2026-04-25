@@ -56,7 +56,7 @@ clientStorage_Status clientStorage_init(void)
     {
         NVS_init();
         NVS_Params_init(&nvsParams);
-        nvsHandle = NVS_open(CONFIG_NVSINTERNAL0, &nvsParams);
+        nvsHandle = NVS_open(CONFIG_NVS_PAPP, &nvsParams);
 
         if (nvsHandle == NULL) {
             return clientStorage_InitError;

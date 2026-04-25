@@ -17,9 +17,28 @@
 #include <stdint.h>
 #include <oad/native_oad/oad_storage.h>
 
+#include <ti/drivers/NVS.h>
 #include <ti/drivers/UART2.h>
 
-void initialize_uart(UART2_Handle *cntrl);
+#include "commonlib/command/command.h"
+#include "commonlib/types/vector.h"
+
+/* Drivers ***********************************************/
+typedef struct {
+    uint32_t fd;
+    NVS_Handle handle;
+    NVS_Params params;
+} nvs_control;
+
+typedef struct {
+    uint32_t fd;
+    UART2_Handle handle;
+    NVS_Params params;
+} uart_control;
+/*********************************************************/
+
+void initialize_uart(UART2_Handle *cntrl, command *cmd);
+void initialize_nvs(nvs_control *cntrl, uint32_t num);
 
 /*******************************************************************************
  * DEFINES
