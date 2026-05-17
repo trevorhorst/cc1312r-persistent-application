@@ -24,6 +24,8 @@ const NVS1        = NVS.addInstance();
 const NVS2        = NVS.addInstance();
 const NVS3        = NVS.addInstance();
 const RF          = scripting.addModule("/ti/drivers/RF");
+const Timer       = scripting.addModule("/ti/drivers/Timer", {}, false);
+const Timer1      = Timer.addInstance();
 const Settings    = scripting.addModule("/ti/posix/tirtos/Settings");
 const BIOS        = scripting.addModule("/ti/sysbios/BIOS");
 const Event       = scripting.addModule("/ti/sysbios/knl/Event");
@@ -82,6 +84,9 @@ NVS3.internalFlash.regionBase = 0x44000;
 NVS3.internalFlash.regionSize = 0x12000;
 NVS3.internalFlash.regionType = "Pointer";
 
+Timer1.$name               = "CONFIG_TIMER_0";
+Timer1.timerInstance.$name = "CONFIG_GPTIMER_0";
+
 BIOS.assertsEnabled = false;
 BIOS.heapBaseAddr   = "__primary_heap_start__";
 BIOS.heapEndAddr    = "__primary_heap_end__";
@@ -89,7 +94,7 @@ BIOS.heapEndAddr    = "__primary_heap_end__";
 const Clock      = scripting.addModule("/ti/sysbios/knl/Clock", {}, false);
 Clock.tickPeriod = 10;
 
-const Timer = scripting.addModule("/ti/sysbios/family/arm/cc26xx/Timer", {}, false);
+const Timer_1 = scripting.addModule("/ti/sysbios/family/arm/cc26xx/Timer", {}, false);
 
 Idle2.$name   = "powerIdle";
 Idle2.idleFxn = "Power_idleFunc";
@@ -120,11 +125,12 @@ System.supportModule   = "SysCallback";
  * version of the tool will not impact the pinmux you originally saw.  These lines can be completely deleted in order to
  * re-solve from scratch.
  */
-Display1.uart.uart.$suggestSolution       = "UART1";
-Display1.uart.uart.txPin.$suggestSolution = "boosterpack.4";
-Display1.uart.uart.rxPin.$suggestSolution = "boosterpack.3";
-GPIO1.gpioPin.$suggestSolution            = "boosterpack.40";
-GPIO2.gpioPin.$suggestSolution            = "boosterpack.39";
-GPIO3.gpioPin.$suggestSolution            = "boosterpack.13";
-GPIO4.gpioPin.$suggestSolution            = "boosterpack.12";
-Timer.rtc.$suggestSolution                = "RTC0";
+Display1.uart.uart.$suggestSolution         = "UART1";
+Display1.uart.uart.txPin.$suggestSolution   = "boosterpack.4";
+Display1.uart.uart.rxPin.$suggestSolution   = "boosterpack.3";
+GPIO1.gpioPin.$suggestSolution              = "boosterpack.40";
+GPIO2.gpioPin.$suggestSolution              = "boosterpack.39";
+GPIO3.gpioPin.$suggestSolution              = "boosterpack.13";
+GPIO4.gpioPin.$suggestSolution              = "boosterpack.12";
+Timer1.timerInstance.timer.$suggestSolution = "GPTM0";
+Timer_1.rtc.$suggestSolution                = "RTC0";

@@ -15,13 +15,17 @@
  ******************************************************************************/
 #include <stdlib.h>
 #include <stdint.h>
-#include <oad/native_oad/oad_storage.h>
 
 #include <ti/drivers/NVS.h>
 #include <ti/drivers/UART2.h>
+#include <ti/drivers/Timer.h>
 
 #include "commonlib/command/command.h"
 #include "commonlib/types/vector.h"
+
+#define HWLIB_VERSION_MAJOR     0
+#define HWLIB_VERSION_MINOR     0
+#define HWLIB_VERSION_PATCH     1
 
 /* Drivers ***********************************************/
 typedef struct {
@@ -35,92 +39,28 @@ typedef struct {
     UART2_Handle handle;
     NVS_Params params;
 } uart_control;
+
+typedef struct {
+    uint32_t fd;
+    Timer_Handle handle;
+} timer_control;
 /*********************************************************/
 
+void initialize_gpio();
 void initialize_uart(UART2_Handle *cntrl, command *cmd);
 void initialize_nvs(nvs_control *cntrl, uint32_t num);
+void initialize_timer(timer_control *cntrl, uint32_t num);
 
 /*******************************************************************************
  * DEFINES
  ******************************************************************************/
-#define OADClient_BLOCK_REQ_POLL_DELAY 80
-#define OADClient_BLOCK_REQ_RATE 60
-#define OADClient_MAX_RETRIES 3
-
-/* node events */
-#define CLIENT_EVENT_ALL                 0xFFFFFFFF
-#define CLIENT_EVENT_NEW_OAD_MSG         (uint32_t)(1 << 0)
-#define CLIENT_EVENT_STATUS_UPDATE       (uint32_t)(1 << 1)
-#define CLIENT_EVENT_OAD_REQ             (uint32_t)(1 << 2)
 
 /*******************************************************************************
  * CONSTANTS
  ******************************************************************************/
 
-
 /*******************************************************************************
  * FUNCTION PROTOTYPES
  ******************************************************************************/
-/**
- *  @brief          Initializes the OAD client and OAD protocol parameters.
- *
- *  @return         Nothing.
- */
-void OAD_Init(void);
-
-/**
- *  @brief          This function initializes the display.
- *
- *  @return         Nothing.
- */
-void Display_setInitialization(void);
-
-/**
- *  @brief          This function initializes the green and red LEDs.
- *
- *  @return         Nothing.
- */
-void GPIO_setInitialization(void);
-
-/**
- *  @brief          This function gets called in the radio module to
- *                  post an event for a new OAD message.
- *
- *  @return         Nothing.
- */
-void rfClient_postNewOADMsg(void);
-
-/**
- *  @brief                          This function keeps track of the block, total blocks and retries
- *
- *  @param      newOadBlock         The new counter value for the received OAD block.
- *  @param      oadBNumBlocks       Total amount of OAD blocks.
- *  @param      retries             The number of retries during the OAD progress.
- *  @return                         Nothing.
- */
-void rfClient_displayOadBlockUpdate(uint16_t newOadBlock, uint16_t oadBNumBlocks, uint32_t retries);
-
-/**
- *  @brief                          This function prints messages relating to the OAD process.
- *
- *  @param      status              Takes an OADStorage_Status_t value that indicate which state the OAD process is at.
- *  @return                         Nothing.
- */
-void rfClient_displayOadStatusUpdate(OADStorage_Status_t status);
-
-/**
- *  @brief                          This function saves a string in the storage and goes into a system reset.
- *
- *  @param      pDstAddr            Destination address to send
- *  @return                         Nothing.
- */
-void rfClient_resetUserApp(void* pDstAddr);
-
-/**
- *  @brief                          This function prints messages relating to the OAD process to UART.
- *             
- *  @return                         Nothing.
- */
-void rfClient_printUpdate(void);
 
 #endif /* RFCLIENT_H_ */

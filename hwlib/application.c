@@ -34,6 +34,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <semaphore.h>
+#include <unistd.h>
 
 /* XDCtools Header files */
 #include <xdc/std.h>
@@ -63,40 +64,26 @@
 #include DeviceFamily_constructPath(driverlib/sys_ctrl.h)
 #include DeviceFamily_constructPath(driverlib/cpu.h)
 
+/* Application Header files */
 #include "hwlib/application.h"
 
 #include "commonlib/command/command.h"
+#include "commonlib/command/handler.h"
+#include "commonlib/console/console.h"
 #include "commonlib/logger/logger.h"
-
-/* Application Header files */
-#include "oad/native_oad/oad_client.h"
-#include "oad/native_oad/oad_storage.h"
-#include "oad/native_oad/oad_protocol.h"
-#include "oad/native_oad/oad_image_header_app.h"
-#include "radio/radio.h"
-
-/* This is on-chip exclusive */
-#ifdef OAD_ONCHIP
-#include "clientStorage.h"
-#endif
 
 // __attribute__((section(".aux_data"))) char aux_ram_data;
 
-/* Display driver handles */
-static Display_Handle hDisplaySerial;
+static uint32_t flags = 0;
 
-/***** Variable declarations *****/
-static char currentFWVersion[4];
-static bool oadInProgress = 0;
-static uint16_t oadBlock = 0;
-static uint16_t oadTotalBlocks = 0;
-static uint32_t oadRetries = 0;
-static int8_t oadStatus = -1;
-uint8_t * ptrAppBuffer;
+#define RESET_FLAG  1 << 0
 
-/* Event variables */
-Event_Struct clientEvent;  /* not static so you can see in ROV */
-static Event_Handle clientEventHandle;
+int32_t cmd_reset(vector *control, cJSON *params, cJSON **result)
+{
+    int32_t error = CMD_ERROR_NONE;
+    flags |= RESET_FLAG;
+    return error;
+}
 
 int32_t cmd_uart(vector *control, cJSON *params, cJSON **result)
 {
@@ -107,6 +94,49 @@ int32_t cmd_uart(vector *control, cJSON *params, cJSON **result)
         UART2_write(handle, test, strlen(test), &bytes_written);
     }
     return 0;
+}
+
+int32_t cmd_version(vector *cntrl, cJSON *params, cJSON **result)
+{
+    // There is no control object in this case
+    (void)cntrl;
+    (void)params;
+
+    // Error stuff
+    int32_t error = CMD_ERROR_NONE;
+
+    int32_t ret = 0;
+    char version_string[64];
+
+    // Hardware library version string
+    ret = snprintf(version_string, sizeof(version_string), "%d.%d.%d",
+                     HWLIB_VERSION_MAJOR, HWLIB_VERSION_MINOR, HWLIB_VERSION_PATCH);
+    if(!error && (ret > 0)) {
+        cJSON_AddStringToObject(*result, "hwlib", version_string);
+    } else {
+        error = CMD_ERROR_CMD_FAILED;
+    }
+
+
+    // cJSON library version string
+    ret = snprintf(version_string, sizeof(version_string), "%d.%d.%d",
+                     CJSON_VERSION_MAJOR, CJSON_VERSION_MINOR, CJSON_VERSION_PATCH);
+    if(!error && (ret > 0)) {
+        cJSON_AddStringToObject(*result, "cjson", version_string);
+    } else {
+        error = CMD_ERROR_CMD_FAILED;
+    }
+
+    return error;
+
+
+
+}
+
+void heartbeat(Timer_Handle handle, int_fast16_t status)
+{
+    /* Setup red LED */
+    GPIO_toggle(CONFIG_GPIO_RLED);
 }
 
 /*
@@ -121,35 +151,53 @@ void *mainThread(void *arg0)
     log_init(uartHandle);
     log_set_level(LOG_DEBUG);
 
+    cmd_handler_init();
+
+    command version_command;
+    command_init(&version_command, cmd_version, "Reports version numbers");
+    command reset_command;
+    command_init(&reset_command, cmd_reset, "Resets the MCU");
+    cmd_handler_add_cmd("version", &version_command);
+    cmd_handler_add_cmd("reset", &reset_command);
+
     nvs_control nvs_cntrl[CONFIG_TI_DRIVERS_NVS_COUNT] = {
         {CONFIG_NVS_UAPP, NULL, {0}},
         { CONFIG_NVS_ENV, NULL, {0}},
         {CONFIG_NVS_PAPP, NULL, {0}}
     };
 
-    NVS_init();
+    timer_control timer_cntrl[CONFIG_TI_DRIVERS_TIMER_COUNT] = {
+        {CONFIG_TIMER_0, NULL}
+    };
 
-    for(uint32_t i = 0; i < CONFIG_TI_DRIVERS_NVS_COUNT; i++) {
-        // Initialize parameters
-        NVS_Params_init(&(nvs_cntrl[i].params));
-        // Initialize handle
-        nvs_cntrl[i].handle = NVS_open(nvs_cntrl[i].fd, &(nvs_cntrl[i].params));
-        if(nvs_cntrl[i].handle == NULL) {
-            LOG_WARN("Failed to open NVS handle %d\r\n", nvs_cntrl[i].fd);
-        } else {
-            NVS_Attrs attributes;
-            NVS_getAttrs(nvs_cntrl[i].handle, &attributes);
-            LOG_INFO("NVS Region %d\r\n", nvs_cntrl[i].fd);
-            LOG_INFO("   Base Address: 0x%x\r\n", attributes.regionBase);
-            LOG_INFO("    Sector Size: 0x%x\r\n", attributes.sectorSize);
-            LOG_INFO("    Region Size: 0x%x\r\n", attributes.regionSize);
+    initialize_gpio();
+    initialize_nvs(nvs_cntrl, CONFIG_TI_DRIVERS_NVS_COUNT);
+    initialize_timer(timer_cntrl, CONFIG_TI_DRIVERS_TIMER_COUNT);
+
+    console_handle console_cntrl;
+    console_init(&console_cntrl, uartHandle);
+
+    bool done = false;
+    while(!done) {
+        console_read_input_char(&console_cntrl, 48000);
+
+        if(flags & RESET_FLAG) {
+            SysCtrlSystemReset();
         }
     }
 
-//    command_init(&uartCommand, cmd_uart, "UART Command Help");
-//    command_add_control(&uartCommand, (void*)uartHandle);
-//    uartCommand.callback(&(uartCommand.control), NULL, NULL);
     return 0;
+}
+
+void initialize_gpio()
+{
+    /* Setup green LED */
+    GPIO_setConfig(CONFIG_GPIO_GLED, GPIO_CFG_OUT_STD | GPIO_CFG_OUT_LOW);
+    GPIO_write(CONFIG_GPIO_GLED, CONFIG_GPIO_LED_OFF);
+
+    /* Setup red LED */
+    GPIO_setConfig(CONFIG_GPIO_RLED, GPIO_CFG_OUT_STD | GPIO_CFG_OUT_LOW);
+    GPIO_write(CONFIG_GPIO_RLED, CONFIG_GPIO_LED_OFF);
 }
 
 void initialize_uart(UART2_Handle *cntrl, command *cmd)
@@ -167,153 +215,45 @@ void initialize_uart(UART2_Handle *cntrl, command *cmd)
 
 void initialize_nvs(nvs_control *cntrl, uint32_t num)
 {
-}
+    LOG_INFO("Initializing NVS...\n");
+    NVS_init();
 
-#if defined(OAD_U_APP) && !defined(MCUBOOT)
-/*!
- This function is called when U-App receives OAD reset request
- */
-void rfClient_resetUserApp(void* pDstAddr)
-{
-    (void) pDstAddr;
-    clientStorage_Status status;
-
-    /* Initialize the storage */
-    clientStorage_init();
-
-    /* Clear a sector in NVS */
-    clientStorage_eraseSector();
-
-    /* Write a data message into NVS*/
-    status = clientStorage_writeStartSeq();
-
-    if (status != clientStorage_Success)
-    {
-        /* If the write was not successful then clear the entire sector */
-        clientStorage_eraseSector();
-    }
-
-    Display_printf(hDisplaySerial, 0, 0, "\033[2J \033[0;0HPerform reset now");
-
-    /* Invalidate OAD image header so the bim will boot into the P-App */
-    OADClient_invalidateHeader();
-
-    /* Reset device */
-    SysCtrlSystemReset();
-}
-#endif
-
-void GPIO_setInitialization(void)
-{
-    /* Setup green LED */
-    GPIO_setConfig(CONFIG_GPIO_GLED, GPIO_CFG_OUT_STD | GPIO_CFG_OUT_LOW);
-    GPIO_write(CONFIG_GPIO_GLED, CONFIG_GPIO_LED_OFF);
-
-    /* Setup red LED */
-    GPIO_setConfig(CONFIG_GPIO_RLED, GPIO_CFG_OUT_STD | GPIO_CFG_OUT_LOW);
-    GPIO_write(CONFIG_GPIO_RLED, CONFIG_GPIO_LED_OFF);
-}
-
-void Display_setInitialization(void)
-{
-    /* Initialize the UART terminal*/
-    Display_Params params;
-    Display_Params_init(&params);
-    params.lineClearMode = DISPLAY_CLEAR_BOTH;
-    hDisplaySerial = Display_open(Display_Type_UART, &params);
-
-    OADImgHdr_getFWVersion(currentFWVersion);
-
-    Display_printf(hDisplaySerial, 0, 0, "\033[2J \033[0;0HMain Menu - Client v%s",
-                    currentFWVersion);
-    Display_printf(hDisplaySerial, 0, 0, "Waiting for Server...");
-}
-
-void OAD_Init(void)
-{
-    OADClient_Params_t oadclientParams = {0};
-
-    /* Create event used internally for state changes */
-    Event_Params eventParam;
-    Event_Params_init(&eventParam);
-    Event_construct(&clientEvent, &eventParam);
-    clientEventHandle = Event_handle(&clientEvent);
-
-    oadclientParams.eventHandle = clientEventHandle;
-    oadclientParams.oadReqEventBit = CLIENT_EVENT_OAD_REQ;
-
-    oadclientParams.oadRspPollEventBit = 0;
-    OADClient_open(&oadclientParams);
-}
-
-void rfClient_printUpdate(void)
-{
-    if (!oadInProgress)
-    {
-        /* print to LCD */
-        Display_clear(hDisplaySerial);
-    }
-
-    if (oadInProgress)
-    {
-        Display_printf(hDisplaySerial, 0, 0, "\033[2J \033[0;0HOAD Block: %d of %d", oadBlock, oadTotalBlocks);
-        Display_printf(hDisplaySerial, 0, 0, "OAD Block Retries: %d", oadRetries);
-    }
-
-    else if (oadStatus != -1)
-    {
-        switch (((OADStorage_Status_t)oadStatus))
-        {
-        case OADStorage_Status_Success:
-            Display_printf(hDisplaySerial, 0, 0, "OAD: completed successfully");
-
-            /* close Serial display for UART Driver */
-            Display_close(hDisplaySerial);
-
-            break;
-        case OADStorage_CrcError:
-            Display_printf(hDisplaySerial, 0, 0, "OAD: CRC failed");
-            break;
-        case OADStorage_Failed:
-            Display_printf(hDisplaySerial, 0, 0, "OAD: aborted");
-            break;
-        default:
-            Display_printf(hDisplaySerial, 0, 0, "OAD: error");
-            break;
+    for(uint32_t i = 0; i < num; i++) {
+        // Initialize parameters
+        NVS_Params_init(&(cntrl[i].params));
+        // Initialize handle
+        cntrl[i].handle = NVS_open(cntrl[i].fd, &(cntrl[i].params));
+        if(cntrl[i].handle == NULL) {
+            LOG_WARN("Failed to open NVS handle %d\r\n", cntrl[i].fd);
+        } else {
+            NVS_Attrs attributes;
+            NVS_getAttrs(cntrl[i].handle, &attributes);
+            LOG_INFO("  NVS Region %d\r\n", cntrl[i].fd);
+            LOG_INFO("    Base Address: 0x%x\r\n", attributes.regionBase);
+            LOG_INFO("    Sector Size : 0x%x\r\n", attributes.sectorSize);
+            LOG_INFO("    Region Size : 0x%x\r\n", attributes.regionSize);
         }
     }
+
 }
 
-void rfClient_postNewOADMsg(void)
+void initialize_timer(timer_control *cntrl, uint32_t num)
 {
-    /* Post an event when it receives a OAD message */
-    Event_post(clientEventHandle, CLIENT_EVENT_NEW_OAD_MSG);
-}
+    LOG_INFO("Initializing Timer...\n");
+    Timer_init();
 
-void rfClient_displayOadBlockUpdate(uint16_t newOadBlock, uint16_t oadBNumBlocks, uint32_t retries)
-{
-    /* Once the OAD progress starts
-     * this condition will run once */
-    if(!oadInProgress)
-    {
-        oadInProgress = true;
+    for(uint32_t i = 0; i < num; i++) {
+        Timer_Params params;
+        Timer_Params_init(&params);
+        params.periodUnits   = Timer_PERIOD_US;
+        params.period        = 250000;
+        params.timerMode     = Timer_CONTINUOUS_CALLBACK;
+        params.timerCallback = heartbeat;
+        cntrl[i].handle = Timer_open(cntrl[i].fd, &params);
+        if(cntrl[i].handle == NULL) {
+            LOG_WARN("Failed to open Timer handle %d\r\n", cntrl[i].fd);
+        } else {
+            Timer_start(cntrl[i].handle);
+        }
     }
-
-    /* Handle all block, totalblock and retries information */
-    oadBlock = newOadBlock;
-    oadTotalBlocks = oadBNumBlocks;
-    oadRetries = retries;
-
-    /* Post an event to update these values on the terminal */
-    Event_post(clientEventHandle, CLIENT_EVENT_STATUS_UPDATE);
-}
-
-void rfClient_displayOadStatusUpdate(OADStorage_Status_t status)
-{
-    /* OAD progress stops so set the flag to be false */
-    oadInProgress = false;
-    oadStatus = (int8_t) status;
-
-    /* Post event to see end result of OAD transfer */
-    Event_post(clientEventHandle, CLIENT_EVENT_STATUS_UPDATE);
 }

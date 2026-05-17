@@ -31,7 +31,7 @@
  */
 
 __TI_STACK_SIZE = 0x600;
-HEAPSIZE = 0x4000; /* Size of heap buffer used by HeapMem */
+HEAPSIZE = 0x10000; /* Size of heap buffer used by HeapMem */
 
 ENTRY(_c_int00)
 
